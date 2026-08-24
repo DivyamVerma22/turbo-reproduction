@@ -90,6 +90,27 @@ def test_select_never_returns_a_duplicate():
     assert len(np.unique(X_next, axis=0)) == 4
 
 
+def test_selection_does_not_corrupt_the_callers_draws():
+    """Protects: `LocalProposal` is a frozen dataclass, so callers may reasonably assume
+    its fields survive a call. Selection masks chosen candidates with +inf, and mutating
+    the caller's array in place makes any later inspection of `proposal.y_cand` read
+    garbage that does not look obviously wrong."""
+    X_cand = np.arange(12, dtype=np.float64).reshape(6, 2)
+    y_cand = np.random.default_rng(0).random((6, 3))
+    before = y_cand.copy()
+    select_candidates(X_cand, y_cand)
+    np.testing.assert_array_equal(y_cand, before)
+
+
+def test_cross_tr_selection_does_not_corrupt_the_callers_draws():
+    """Same guarantee for the multi-region path."""
+    X_cand = np.random.default_rng(0).random((2, 5, 3))
+    y_cand = np.random.default_rng(1).random((2, 5, 2))
+    before = y_cand.copy()
+    select_candidates_across(X_cand, y_cand)
+    np.testing.assert_array_equal(y_cand, before)
+
+
 # --- cross-TR selection (the bandit) -----------------------------------------------
 def test_select_across_shapes():
     rng = np.random.default_rng(0)

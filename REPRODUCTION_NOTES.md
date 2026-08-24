@@ -68,6 +68,7 @@ Regression test: `tests/test_candidates.py::test_last_dimension_is_reachable_by_
 | C8 | Restart data handling | TuRBO-1 discards local data; TuRBO-m orphans it (`_idx = -1`) but keeps it in the global history | retain for the new TR's GP (contradicts "discard") | PARTIALLY_SPECIFIED |
 | C9 | `max_evals` includes the initial design | yes | no — would give TuRBO extra evaluations vs. baselines | FROM_OFFICIAL_CODE |
 | C10 | Budget overshoot on restart | **truncate** to the remaining budget | overshoot by up to `n_init`, as the official code does (`turbo_m.py` L221) | UNSPECIFIED → ASSUMPTION |
+| C10a | Consequence of C10: a restart near the end of the budget draws a *truncated* Latin hypercube, which loses stratification (at `n_init=1` it degenerates to a single uniform point) | accept — affects only the final restart, and the alternative wastes budget | skip a restart that cannot afford a full design; or overshoot per the official code | ASSUMPTION |
 | C11 | RNG policy | explicit `np.random.Generator` threaded through; torch RNG forked and seeded per draw | global seeding (official code) — not reproducible under parallel replications | ASSUMPTION |
 | C12 | `n_init` library default | none — caller must pass it; per-experiment values in `PAPER_SPEC.md` §9 | `2·d`, per the official docstring (no paper backing) | UNSPECIFIED |
 | C13 | Synthetic function formulas | standard textbook definitions | — | UNSPECIFIED (App. A names them and gives domains, never formulas) |

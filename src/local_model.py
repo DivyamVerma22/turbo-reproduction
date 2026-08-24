@@ -20,9 +20,11 @@ even though the algorithm is unchanged.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
+import gpytorch
 import numpy as np
 import torch
 
@@ -147,7 +149,13 @@ def propose_from_trust_region(
     # Sect. 2 (E3): best observation, or smallest posterior mean under noise.
     posterior_mean = None
     if settings.noisy:
-        with torch.no_grad():
+        # Evaluating the posterior AT the training inputs is exactly what Sect. 2 asks for
+        # ("the observation with the smallest posterior mean"), but GPyTorch warns that the
+        # input matches its stored training data and suspects a forgotten `.train()`. The
+        # eval-mode posterior is the intended quantity, so silence just this warning rather
+        # than training reviewers to ignore warnings in general.
+        with torch.no_grad(), warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=gpytorch.utils.warnings.GPInputWarning)
             posterior_mean = gp(torch.as_tensor(X_unit, dtype=torch.float64)).mean.cpu().numpy()
     x_center = select_center(X_unit, fX_std, posterior_mean, noisy=settings.noisy)
 

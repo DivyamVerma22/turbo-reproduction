@@ -9,7 +9,7 @@ paper's protocol is 30 replications (App. A); the runs in §D use 2–3.
 
 Last run: 2026-08-24 · Python 3.11.0 · torch 2.13.0+cpu · gpytorch 1.15.2 · numpy 2.2.6 ·
 scipy 1.13.1 · pytest 9.1.1 · CPU only, float64.
-Suite: **184 tests, 184 passed** (14.4 s). Reproduce: `pytest tests/ -q`
+Suite: **193 tests, 193 passed** (13.0 s). Reproduce: `pytest tests/ -q`
 
 **Mutation-tested.** 22 known-wrong implementations were injected into a throwaway copy of
 `src/` and the suite re-run; **22/22 are now caught** (17 initially, of which 2 escaped; a 22nd gap surfaced
@@ -20,7 +20,7 @@ de-standardization, growth factor 2→1.5, ARD disabled, every App. D constant
 probability), `argmin`→`argmax` in centering and in Thompson selection, the App. C noise
 bound, and removal of the torch RNG fork.
 
-Status counts: **0 FAIL · 12 UNVERIFIED · 44 PASS · 5 N/A** (3 FAIL found and fixed — §A)
+Status counts: **0 FAIL · 11 UNVERIFIED · 51 PASS · 5 N/A** (3 FAIL in §A, 7 review findings in §H — all fixed)
 
 ---
 
@@ -216,6 +216,28 @@ TuRBO is a Bayesian-optimization algorithm; it has no neural network.
 | 6 | **F1** — L-BFGS-B budget silently ignored (`maxfev` vs `maxfun`) | this audit; `test_scipy_budget_option_is_accepted_by_the_solver` | per-solver option key (`src/baselines.py:70`) |
 | 7 | **F2** — docstring promised a reward path with no implementation | this audit; `test_negate_*` | added `negate`; corrected the docstring |
 | 8 | **F3** — `TurboM` carried a stale single-TR state with the TuRBO-1 `failtol` | this audit; `test_turbo_m_inherited_state_is_not_stale` | rebuild `self.state` after the tolerance is set (`src/turbo_m.py:66`) |
+
+## H. Independent adversarial review (findings, all fixed)
+
+A reviewer pass assuming the implementation was subtly wrong despite passing tests. The
+**core TuRBO algorithm was confirmed correct** — `Turbo1._propose` fits on trust-region-local
+data (`turbo_1.py:145`), and trust-region geometry, the success/failure schedule, per-TR
+counters and the cross-TR bandit all match §2/App. D. No CRITICAL finding. Every defect was
+in the baseline comparison path — the module that had zero test coverage until recently.
+
+| # | Sev | Finding | Paper ref | Fix | Test |
+|---|---|---|---|---|---|
+| H1 | **HIGH** | `_initial_best` evaluated the objective directly, bypassing the counter, and was redrawn per restart. Measured: BFGS made **52 real calls for a stated budget of 30** (71 at `n_init=20`). Since §3 compares per evaluation, this biased the comparison toward the baselines — BFGS scored −3.08 with 52 evals vs **−2.05** with an honest 30. | §3; App. B ("initialized from the best of a few initial points") | Charge the design through the counted objective, cap by remaining budget, enforce hard via `_BudgetExhausted` (solvers check caps only between iterations, and a finite-difference gradient is atomic) | `test_baseline_objective_calls_match_the_stated_budget`, `test_restart_initial_designs_do_not_inflate_the_budget` |
+| H2 | MEDIUM | The budget test asserted `result["n_evals"]` — the *truncated* trace length, which cannot exceed the budget by construction. A tautology, and the reason H1 survived 184 tests and a 22-mutation sweep. | — | Assert real objective calls via a counting benchmark | as above |
+| H3 | MEDIUM | Nelder-Mead ran with `bounds=None` and relied on clipping inside the objective, so the simplex moved through out-of-box space while being scored on clipped points; distinct vertices collapse to the same point, wasting budget and creating artificial flat regions. | §2 (domain `Ω`); App. B | Pass the box to both solvers | `test_nelder_mead_searches_only_inside_the_domain` (0 out-of-bounds, was non-zero) |
+| H4 | MEDIUM | `select_candidates`/`_across` mutated the caller's `y_cand` in place, while `LocalProposal` advertises `frozen=True`. Later inspection would read `+inf` garbage that does not look obviously wrong. | — | Copy on entry (~2 MB even at rover settings) | `test_selection_does_not_corrupt_the_callers_draws` (+ cross-TR variant) |
+| H5 | LOW | The noisy centering path emitted `GPInputWarning` on every batch — values correct, but it trains reviewers to ignore warnings. | §2 (noisy centering) | Silence that one warning at the call site, with the reason | warning count 8 → 7 |
+| H6 | LOW | A restart near the end of the budget draws a truncated Latin hypercube, losing stratification (degenerate at `n_init=1`). | App. A (LHD) | Documented as `REPRODUCTION_NOTES.md` C10a | — |
+| H7 | LOW | `summarize` deep-copied every trace via `asdict` to read one small dict. | — | `dict(results[0].settings)` | — |
+
+**Core untouched:** golden trajectories captured before the refactor replay **bit-identical**
+after all seven fixes, across TuRBO-1 (default), TuRBO-1 (all four behavioral flags flipped)
+and TuRBO-m (m=3), comparing `X`, `fX` and `_idx`.
 
 ## G2. Behavior-preservation check for the readability refactor
 

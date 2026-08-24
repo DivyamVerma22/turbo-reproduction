@@ -13,7 +13,7 @@ module records the settings actually used alongside the trace so that claim is c
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -155,5 +155,5 @@ def summarize(results: list[RunResult]) -> dict:
         "median_best": float(np.median(finals)),
         "min_best": float(finals.min()),
         "max_best": float(finals.max()),
-        "settings": asdict(results[0])["settings"],
+        "settings": dict(results[0].settings),
     }

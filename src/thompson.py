@@ -90,7 +90,7 @@ def select_candidates(X_cand: np.ndarray, y_cand: np.ndarray) -> np.ndarray:
 
     Args:
         X_cand: (n_cand, d) float64.
-        y_cand: (n_cand, q) float64. Mutated: selected rows are set to +inf.
+        y_cand: (n_cand, q) float64. Copied on entry; the caller's array is not modified.
 
     Returns X_next: (q, d) float64.
 
@@ -101,7 +101,10 @@ def select_candidates(X_cand: np.ndarray, y_cand: np.ndarray) -> np.ndarray:
     # equation as literally written).
     """
     X_cand = np.asarray(X_cand, dtype=np.float64)
-    y_cand = np.asarray(y_cand, dtype=np.float64)
+    # De-duplication masks chosen candidates with +inf. Copy so the caller's draws survive:
+    # `LocalProposal` is a frozen dataclass and callers may reasonably inspect `y_cand`
+    # afterwards for diagnostics, where +inf entries would not look obviously wrong.
+    y_cand = np.array(y_cand, dtype=np.float64, copy=True)
     n_cand, dim = X_cand.shape
     batch_size = y_cand.shape[1]
     assert y_cand.shape[0] == n_cand
@@ -135,14 +138,15 @@ def select_candidates_across(
 
     Args:
         X_cand: (m, n_cand, d) float64.
-        y_cand: (m, n_cand, q) float64, de-standardized. Mutated: selected entries -> +inf.
+        y_cand: (m, n_cand, q) float64, de-standardized. Copied on entry; the caller's
+            array is not modified.
 
     Returns:
         X_next: (q, d) float64.
         idx_next: (q, 1) int, the owning trust region of each selected point.
     """
     X_cand = np.asarray(X_cand, dtype=np.float64)
-    y_cand = np.asarray(y_cand, dtype=np.float64)
+    y_cand = np.array(y_cand, dtype=np.float64, copy=True)  # see select_candidates
     m, n_cand, dim = X_cand.shape
     batch_size = y_cand.shape[2]
     assert y_cand.shape[:2] == (m, n_cand)
