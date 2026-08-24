@@ -16,7 +16,7 @@ import pytest
 from scipy.optimize import OptimizeWarning
 
 from src import baselines as B
-from src.benchmarks import get_benchmark
+from src.benchmarks import Benchmark, get_benchmark
 
 MAX_EVALS = 30
 
@@ -26,13 +26,50 @@ def bench():
     return get_benchmark("hartmann6")
 
 
+def counting_benchmark(dim: int = 6):
+    """A benchmark that records every objective call, to audit true budget use."""
+    calls = {"n": 0}
+
+    def f(x):
+        calls["n"] += 1
+        return float(np.sum((np.asarray(x, dtype=float) - 0.3) ** 2))
+
+    return Benchmark("counted", f, np.zeros(dim), np.ones(dim), dim, 0.0), calls
+
+
 @pytest.mark.parametrize("name", ["random_search", "nelder_mead", "bfgs"])
-def test_baseline_runs_and_respects_its_budget(bench, name):
+def test_baseline_runs_and_reports_a_consistent_trace(bench, name):
     result = getattr(B, name)(bench, MAX_EVALS, seed=0)
-    assert result["n_evals"] <= MAX_EVALS
     assert np.isfinite(result["best_value"])
     assert result["fX"].shape == (result["n_evals"],)
     assert result["best_value"] == pytest.approx(result["fX"].min())
+
+
+@pytest.mark.parametrize("name", ["random_search", "nelder_mead", "bfgs"])
+def test_baseline_objective_calls_match_the_stated_budget(name):
+    """Protects: §3 compares every method PER EVALUATION (Figs. 2-4).
+
+    `result["n_evals"]` is the truncated length of the recorded trace, so asserting on it
+    is a tautology -- it cannot exceed the budget by construction. The quantity that
+    matters is how many times the objective was actually called: App. B initializes the
+    local methods "from the best of a few initial points", and those points cost budget.
+    """
+    b, calls = counting_benchmark()
+    getattr(B, name)(b, MAX_EVALS, seed=0)
+    assert calls["n"] <= MAX_EVALS, (
+        f"{name} used {calls['n']} objective calls for a stated budget of {MAX_EVALS}"
+    )
+
+
+@pytest.mark.parametrize("n_init", [5, 10, 20])
+def test_restart_initial_designs_do_not_inflate_the_budget(n_init):
+    """The initial design is redrawn on every restart, so an uncounted design inflates the
+    true budget without bound as restarts accumulate."""
+    b, calls = counting_benchmark()
+    B.bfgs(b, MAX_EVALS, seed=0, n_init=n_init)
+    assert calls["n"] <= MAX_EVALS, (
+        f"n_init={n_init}: {calls['n']} calls for a budget of {MAX_EVALS}"
+    )
 
 
 @pytest.mark.parametrize("method,name", [("Nelder-Mead", "nelder_mead"), ("L-BFGS-B", "bfgs")])
@@ -47,6 +84,27 @@ def test_scipy_budget_option_is_accepted_by_the_solver(bench, method, name):
         warnings.simplefilter("error", OptimizeWarning)
         result = getattr(B, name)(bench, MAX_EVALS, seed=0)
     assert result["n_evals"] <= MAX_EVALS
+
+
+def test_nelder_mead_searches_only_inside_the_domain():
+    """Protects: §2 defines the problem on the box Omega; App. B uses SciPy's NM.
+
+    NM was previously called with `bounds=None` and the objective clipped instead, so the
+    simplex moved through out-of-box space while being scored on clipped points. Distinct
+    vertices then collapse onto the same clipped point, wasting budget and creating
+    artificial flat regions that stall the simplex.
+    """
+    seen_outside = []
+
+    def f(x):
+        x = np.asarray(x, dtype=float)
+        if np.any(x < -1e-12) or np.any(x > 1 + 1e-12):
+            seen_outside.append(x.copy())
+        return float(np.sum((x - 0.3) ** 2))
+
+    b = Benchmark("boxed", f, np.zeros(6), np.ones(6), 6, 0.0)
+    B.nelder_mead(b, 40, seed=0)
+    assert not seen_outside, f"{len(seen_outside)} evaluations fell outside the domain"
 
 
 def test_local_baselines_beat_random_search(bench):

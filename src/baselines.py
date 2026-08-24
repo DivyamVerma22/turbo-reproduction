@@ -27,10 +27,47 @@ from .utils import as_generator, from_unit_cube, latin_hypercube
 __all__ = ["random_search", "nelder_mead", "bfgs", "cma_es", "bobyqa"]
 
 
-def _initial_best(bench: Benchmark, n_init: int, rng) -> np.ndarray:
-    """App. B: baselines are "initialized from the best of a few initial points"."""
+class _BudgetExhausted(Exception):
+    """Raised inside a counted objective once the evaluation budget is spent.
+
+    Solvers check their own evaluation caps only between iterations, and a
+    finite-difference gradient is atomic (Sect. 3: "BFGS approximates the gradient via
+    finite differences and thus requires d+1 evaluations for each step"), so `maxfun`
+    alone lets a solver overshoot by up to d+1. §3 compares methods per evaluation, so the
+    budget is enforced hard: the objective refuses the call that would exceed it and the
+    caller unwinds.
+    """
+
+
+def _counted(bench: Benchmark, history: list[float], max_evals: int, clip: bool = False):
+    """Wrap `bench` so every call is recorded and the budget is strictly enforced."""
+
+    def objective(x):
+        if len(history) >= max_evals:
+            raise _BudgetExhausted
+        x = np.asarray(x, dtype=np.float64)
+        if clip:
+            x = np.clip(x, bench.lb, bench.ub)
+        v = bench(x)
+        history.append(v)
+        return v
+
+    return objective
+
+
+def _initial_best(bench: Benchmark, n_init: int, rng, objective=None) -> np.ndarray:
+    """App. B: baselines are "initialized from the best of a few initial points".
+
+    Args:
+        objective: the counted callable the caller uses to record evaluations. These
+            initial points are real objective calls and MUST be charged to the budget --
+            §3 compares every method per evaluation (Figs. 2-4). Evaluating `bench`
+            directly here would hand the local baselines free evaluations, which measured
+            at 1.7-2.4x their stated budget for BFGS.
+    """
+    objective = bench if objective is None else objective
     X = from_unit_cube(latin_hypercube(n_init, bench.dim, rng), bench.lb, bench.ub)
-    fX = np.array([bench(x) for x in X])
+    fX = np.array([objective(x) for x in X])
     return X[int(np.argmin(fX))]
 
 
@@ -46,16 +83,19 @@ def _scipy_with_restarts(bench, max_evals, method, seed, n_init, **opts) -> dict
     """App. B: "with multiple restarts", each "initialized from the best of a few initial points"."""
     rng = as_generator(seed)
     history: list[float] = []
-
-    def wrapped(x):
-        x = np.clip(x, bench.lb, bench.ub)
-        v = bench(x)
-        history.append(v)
-        return v
+    wrapped = _counted(bench, history, max_evals, clip=True)
 
     best = np.inf
     while len(history) < max_evals:
-        x0 = _initial_best(bench, min(n_init, max(1, max_evals - len(history))), rng)
+        # The initial design is charged to the budget via `wrapped`, and capped by what
+        # remains so a restart can never overshoot.
+        n_start = min(n_init, max_evals - len(history))
+        if n_start <= 0:
+            break
+        try:
+            x0 = _initial_best(bench, n_start, rng, objective=wrapped)
+        except _BudgetExhausted:
+            break
         if len(history) >= max_evals:
             break
         remaining = max_evals - len(history)
@@ -64,14 +104,17 @@ def _scipy_with_restarts(bench, max_evals, method, seed, n_init, **opts) -> dict
         # OptimizeWarning and silently ignore the budget, so the solver runs past the
         # remaining evaluations (§3: the comparison is per evaluation).
         budget_key = "maxfun" if method == "L-BFGS-B" else "maxfev"
-        res = minimize(
-            wrapped,
-            x0,
-            method=method,
-            bounds=list(zip(bench.lb, bench.ub)) if method != "Nelder-Mead" else None,
-            options={budget_key: remaining, **opts},
-        )
-        best = min(best, float(res.fun))
+        try:
+            res = minimize(
+                wrapped,
+                x0,
+                method=method,
+                bounds=list(zip(bench.lb, bench.ub)),
+                options={budget_key: remaining, **opts},
+            )
+            best = min(best, float(res.fun))
+        except _BudgetExhausted:
+            break
     fX = np.array(history[:max_evals], dtype=np.float64)
     return {"best_value": float(fX.min()), "n_evals": len(fX), "fX": fX}
 
@@ -105,7 +148,9 @@ def cma_es(bench: Benchmark, max_evals: int, batch_size: int, seed=None, n_init:
         ) from exc
 
     rng = as_generator(seed)
-    x0 = _initial_best(bench, n_init, rng)
+    history: list[float] = []
+    counted = _counted(bench, history, max_evals)
+    x0 = _initial_best(bench, min(n_init, max_evals), rng, objective=counted)
     sigma0 = 0.3 * float(np.mean(bench.ub - bench.lb))
     es = cma.CMAEvolutionStrategy(
         list(x0),
@@ -117,12 +162,13 @@ def cma_es(bench: Benchmark, max_evals: int, batch_size: int, seed=None, n_init:
             "verbose": -9,
         },
     )
-    history: list[float] = []
-    while len(history) < max_evals and not es.stop():
-        solutions = es.ask()
-        values = [bench(np.asarray(s)) for s in solutions]
-        es.tell(solutions, values)
-        history.extend(values)
+    try:
+        while len(history) < max_evals and not es.stop():
+            solutions = es.ask()
+            values = [counted(np.asarray(s)) for s in solutions]
+            es.tell(solutions, values)
+    except _BudgetExhausted:
+        pass
     fX = np.array(history[:max_evals], dtype=np.float64)
     return {"best_value": float(fX.min()), "n_evals": len(fX), "fX": fX}
 
@@ -143,16 +189,20 @@ def bobyqa(bench: Benchmark, max_evals: int, seed=None, n_init: int = 5) -> dict
     rng = as_generator(seed)
     history: list[float] = []
 
+    counted = _counted(bench, history, max_evals)
+
     def objective(x, _grad):
-        v = bench(np.asarray(x))
-        history.append(v)
-        return v
+        return counted(x)
 
     opt = nlopt.opt(nlopt.LN_BOBYQA, bench.dim)
     opt.set_lower_bounds(bench.lb)
     opt.set_upper_bounds(bench.ub)
     opt.set_min_objective(objective)
-    opt.set_maxeval(max_evals)
-    opt.optimize(list(_initial_best(bench, n_init, rng)))
+    try:
+        x0 = _initial_best(bench, min(n_init, max_evals), rng, objective=counted)
+        opt.set_maxeval(max(0, max_evals - len(history)))
+        opt.optimize(list(x0))
+    except _BudgetExhausted:
+        pass
     fX = np.array(history[:max_evals], dtype=np.float64)
     return {"best_value": float(fX.min()), "n_evals": len(fX), "fX": fX}
