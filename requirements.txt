@@ -1,0 +1,12 @@
+# Core (App. C specifies GPyTorch for scalable GP regression)
+torch>=2.0
+gpytorch>=1.11
+numpy>=1.24
+scipy>=1.10
+
+# Tests
+pytest>=7.0
+
+# Optional baselines (App. B) -- not required by the core package
+# cma      # CMA-ES, https://github.com/CMA-ES/pycma
+# nlopt    # BOBYQA
