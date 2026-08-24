@@ -103,20 +103,23 @@ Planned module layout is `PAPER_SPEC.md` §2; per-module tensor shapes and dtype
 
 ## Environment
 
-- Python 3.11.0, CPU only. `torch` 2.13.0+cpu, `gpytorch` 1.15.2, `numpy` 2.2.6, `scipy` 1.13.1,
-  `pytest` 9.1.1. See `requirements.txt`.
-- `cma` and `nlopt` are **optional** and not installed; `src/baselines.py` imports them lazily, so
-  CMA-ES and BOBYQA raise a clear `ImportError` rather than failing at import time.
+Setup from a clean clone is in `CLEAN_SETUP_CHECKLIST.md`. Summary:
+
+- Python >= 3.10; versions are pinned in `requirements.txt` (CPU-only torch is sufficient — nothing
+  in `src/` requests a GPU).
+- `cma` and `nlopt` are **optional** and not installed by default; `src/baselines.py` imports them
+  lazily, so CMA-ES and BOBYQA raise a clear `ImportError` naming the package rather than failing at
+  import time.
 - The paper specifies GPyTorch with CG solves + Lanczos log-determinants (App. C). An exact-Cholesky GP
   is conceptually equivalent but numerically different at large `n` — a rule-12 deviation if you use one.
-- Shell is Git Bash on Windows; the repo sits inside a OneDrive-synced folder, so `.git/` syncs too and
-  can occasionally hit lock contention during commits.
+- No environment variables, no network access, and no external data files are needed to run the tests
+  or the reproduction script.
 - Default branch is `master`.
 
 ## Testing and verification
 
 ```bash
-pytest tests/ -q                                              # full suite (111 tests, ~13 s)
+pytest tests/ -q                                              # full suite (193 tests, ~13 s)
 pytest tests/test_trust_region.py -q                          # one module
 pytest tests/test_trust_region.py::test_volume_invariant -q   # rule 9: the smallest relevant test
 pytest tests/ -q -k "thompson or bandit"                      # by keyword
@@ -134,17 +137,39 @@ unpublished). The reproducible targets are the synthetics in `PAPER_SPEC.md` §8
 Rastrigin (10D) and Hartmann6, 500 evaluations at `q=10` with 20 initial points, 30 replications,
 reported as mean ± one standard error.
 
-## Regenerating the paper artifacts
-
-`.paper2code_work/` is untracked scratch holding the parsed paper (`paper_text.md`, `sections/`,
-`paper_metadata.json`) and the downloaded official reference source (`official/`). It is not guaranteed
-to survive. To rebuild:
+## Reproducing against the paper
 
 ```bash
-SKILL="$HOME/OneDrive/Desktop/Claude/.claude/skills/paper2code"
-python "$SKILL/scripts/fetch_paper.py" 1910.01739 .paper2code_work/1910.01739/
-python "$SKILL/scripts/extract_structure.py" .paper2code_work/1910.01739/paper_text.md .paper2code_work/1910.01739/
+python scripts/reproduce_minimal.py          # App. A protocol: 30 replications, ~10 min CPU
+python scripts/reproduce_minimal.py --replications 5   # faster; flagged as a deviation
 ```
+
+The cheapest experiment that meaningfully validates the implementation: TuRBO-1 vs. random
+search / Nelder-Mead / BFGS on Ackley-10 under App. A's pinned protocol (500 evaluations,
+`q=10`, 20 initial LHD points, 30 runs, mean ± one standard error). It logs seed and
+environment, writes raw per-replication metrics and best-so-far traces to `results/`, and
+labels the outcome **MATCH / PARTIAL MATCH / NOT REPRODUCED**.
+
+Read the verdict narrowly. App. A reports Figure 8 as a *plot* and states no numeric value
+for Ackley-10, so a MATCH means "consistent with the paper's claims", never "reproduces the
+paper's numbers". The "close to the global optimum" threshold is this repo's
+operationalization of App. A's wording, declared in `CONFIG`, not a paper-stated quantity.
+
+Every precise number the paper does report — robot pushing's 9.4 (§3.1), rover's ~2 (§3.2),
+§3.6's 1.284 vs 1.174 nats — depends on external simulators the paper does not specify, so
+none of them is checkable here. See `REPRODUCTION_NOTES.md` §6.
+
+## Regenerating the paper artifacts
+
+`.paper2code_work/` is untracked scratch that held the parsed paper and a copy of the official
+reference source. **It is not in the repository** and was produced by a local authoring tool that a
+cloner will not have. Nothing in `src/`, `tests/` or `scripts/` depends on it — it exists only to
+re-check quotations.
+
+To recreate the equivalent by hand: download `https://arxiv.org/abs/1910.01739` and, for the official
+code referenced throughout `REPRODUCTION_NOTES.md`, `https://github.com/uber-research/TuRBO`. Every
+citation in `PAPER_SPEC.md` names its section or `file:line`, so quotations can be verified directly
+against those two sources without any tooling.
 
 PDF extraction of this paper fails its quality check — `pdfplumber` loses inter-word spacing — and the
 fetcher falls back to ar5iv HTML. That fallback is the good text. When verifying a quote against the

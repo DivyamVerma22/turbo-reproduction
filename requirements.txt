@@ -1,12 +1,25 @@
-# Core (App. C specifies GPyTorch for scalable GP regression)
-torch>=2.0
-gpytorch>=1.11
-numpy>=1.24
-scipy>=1.10
+# Pinned to the versions this reproduction was developed and verified against.
+# The recorded results in results/ and the numbers in VERIFICATION.md come from exactly
+# these. Newer versions very likely work; if you change one, re-run `pytest tests/ -q`
+# and treat any difference as a finding rather than noise.
+#
+# Requires Python >= 3.10 (the code uses PEP 604 `X | Y` annotations at runtime in
+# dataclass fields). Developed on 3.11.0.
+#
+# torch: CPU is sufficient -- nothing in src/ requests a GPU. To avoid downloading a
+# multi-gigabyte CUDA build, install torch first from the CPU index:
+#     pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+# then `pip install -r requirements.txt`. See CLEAN_SETUP_CHECKLIST.md.
+
+torch==2.13.0
+gpytorch==1.15.2
+numpy==2.2.6
+scipy==1.13.1
 
 # Tests
-pytest>=7.0
+pytest==9.1.1
 
-# Optional baselines (App. B) -- not required by the core package
-# cma      # CMA-ES, https://github.com/CMA-ES/pycma
-# nlopt    # BOBYQA
+# Optional -- only needed for two App. B baselines. Absent by design: src/baselines.py
+# imports them lazily and raises a clear ImportError naming the package.
+# cma==4.4.0      # CMA-ES, https://github.com/CMA-ES/pycma
+# nlopt==2.10.0   # BOBYQA

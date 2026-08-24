@@ -2,4 +2,3 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .paper2code_work/
-*.npz
