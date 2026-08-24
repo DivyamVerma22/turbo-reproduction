@@ -1,5 +1,7 @@
 # TuRBO — Independent Reproduction
 
+[![tests](https://github.com/DivyamVerma22/turbo-reproduction/actions/workflows/tests.yml/badge.svg)](https://github.com/DivyamVerma22/turbo-reproduction/actions/workflows/tests.yml)
+
 A from-scratch, citation-anchored reimplementation of **TuRBO** (Trust Region Bayesian Optimization),
 built by reading the paper rather than porting the authors' code.
 
@@ -103,6 +105,7 @@ before regions are compared. See `PAPER_SPEC.md` §5.
 ├── scripts/
 │   └── reproduce_minimal.py
 ├── results/              # committed evidence for the verdict below
+├── .github/workflows/    # CI: pytest on 3.10-3.12
 ├── PAPER_SPEC.md         # the implementation contract
 ├── REPRODUCTION_NOTES.md # deviations and assumptions
 ├── VERIFICATION.md       # audit: what is and isn't verified
@@ -299,10 +302,10 @@ and link to the paper above — and note which of its results were actually run 
 
 ## License
 
-**No license file is present**, so default copyright applies and no permissions are granted. If you
-intend to publish or share this repository, add a license explicitly.
+[MIT](LICENSE) — covers the code in this repository, which was written from the published paper.
+It does not cover the paper itself.
 
-Note for anyone considering relicensing: the official TuRBO implementation is distributed under the
-**Uber Non-Commercial License**. This code was written from the paper and no source was copied from
-it, but it was consulted to resolve unspecified details (each tagged `[FROM_OFFICIAL_CODE]`). Review
-that yourself before choosing a license.
+The official TuRBO implementation is distributed under the **Uber Non-Commercial License**. No source
+was copied from it; it was consulted to resolve details the paper leaves unspecified, and every such
+case is tagged `[FROM_OFFICIAL_CODE]` in the source and listed in
+[REPRODUCTION_NOTES.md](REPRODUCTION_NOTES.md).

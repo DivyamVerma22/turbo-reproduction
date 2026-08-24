@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: >-
+  This repository is an independent reproduction. If you use it, please cite
+  the original paper (listed under references) rather than this software.
+title: "TuRBO — Independent Reproduction"
+abstract: >-
+  A from-scratch, citation-anchored reimplementation of TuRBO (Trust Region
+  Bayesian Optimization) built by reading the paper rather than porting the
+  authors' code. Not affiliated with or endorsed by the original authors.
+type: software
+authors:
+  - alias: DivyamVerma22
+repository-code: "https://github.com/DivyamVerma22/turbo-reproduction"
+license: MIT
+references:
+  - type: conference-paper
+    title: "Scalable Global Optimization via Local Bayesian Optimization"
+    year: 2019
+    collection-title: "Advances in Neural Information Processing Systems 32"
+    url: "https://arxiv.org/abs/1910.01739"
+    authors:
+      - family-names: Eriksson
+        given-names: David
+      - family-names: Pearce
+        given-names: Michael
+      - family-names: Gardner
+        given-names: "Jacob R."
+      - family-names: Turner
+        given-names: Ryan
+      - family-names: Poloczek
+        given-names: Matthias
